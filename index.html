@@ -18,6 +18,9 @@
 html{scroll-behavior:smooth;background:var(--teal)}
 body{margin:0;overflow-x:hidden;background:var(--cream);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif}
 button,a{font:inherit} a{text-decoration:none;color:inherit}
+body.gate-closed{overflow:hidden;height:100svh}
+body.gate-closed #cover{touch-action:none}
+body.gate-open #cover{touch-action:auto}
 .progress{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--gold),#f4e4b4);z-index:999}
 .noise{position:fixed;inset:0;pointer-events:none;opacity:.035;z-index:998;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E")}
 .section{min-height:100svh;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:72px 20px}
@@ -209,7 +212,7 @@ button,a{font:inherit} a{text-decoration:none;color:inherit}
 @keyframes coverGlow{0%,100%{opacity:.72;transform:translate(-50%,-50%) scale(.96)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}}
 .modern-cover:after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.45;background-image:radial-gradient(circle at 18% 28%,rgba(239,212,154,.35) 0 1px,transparent 1.5px),radial-gradient(circle at 76% 20%,rgba(239,212,154,.28) 0 1px,transparent 1.5px),radial-gradient(circle at 88% 74%,rgba(239,212,154,.24) 0 1px,transparent 1.5px),radial-gradient(circle at 22% 78%,rgba(239,212,154,.22) 0 1px,transparent 1.5px);animation:twinkle 4.8s ease-in-out infinite alternate}
 @keyframes twinkle{0%{opacity:.24;filter:blur(.1px)}100%{opacity:.62;filter:blur(.35px)}}
-.envelope-wrap{height:min(290px,62vw);margin-top:8px}
+.envelope-wrap{height:min(290px,62vw);margin-top:8px;position:relative;z-index:20}
 .envelope-shadow{animation:shadowPulse 6s ease-in-out infinite}
 @keyframes shadowPulse{0%,100%{transform:scaleX(.94);opacity:.62}50%{transform:scaleX(1.04);opacity:.78}}
 .envelope{animation:envelopeFloat 6s ease-in-out infinite;transform-style:preserve-3d}
@@ -269,9 +272,20 @@ button,a{font:inherit} a{text-decoration:none;color:inherit}
 @media(prefers-reduced-motion:reduce){
 }
 
+
+/* V8 — robust mobile entry gate */
+html.gate-lock{height:100%;overflow:hidden;overscroll-behavior:none;}
+body.gate-closed{position:fixed;inset:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;}
+body.gate-closed #cover{touch-action:auto;}
+#openBtn{position:relative;pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;cursor:pointer;}
+.envelope-hit{position:absolute;inset:0;z-index:8;display:block;border:0;background:transparent;padding:0;margin:0;cursor:pointer;pointer-events:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;}
+@media (max-width:720px){
+  #openBtn{position:absolute;z-index:10001;min-width:92px;min-height:92px;}
+}
+
 </style>
 </head>
-<body>
+<body class="gate-closed">
 <div class="progress" id="progress"></div>
 <div class="noise"></div>
 
@@ -299,10 +313,11 @@ button,a{font:inherit} a{text-decoration:none;color:inherit}
           <span>S&amp;S</span>
         </div>
       </div>
-      <a class="seal-open" id="openBtn" href="#hero" aria-label="Open invitation">
+      <button class="envelope-hit" id="envelopeHit" type="button" aria-label="Open invitation" onclick="window.openInvitation && window.openInvitation(event)"></button>
+      <button class="seal-open" id="openBtn" type="button" aria-label="Open invitation" onclick="window.openInvitation && window.openInvitation(event)" ontouchend="window.openInvitation && window.openInvitation(event)" onpointerup="window.openInvitation && window.openInvitation(event)">
         <span class="seal-kicker">Tap the seal</span>
         <b>S&amp;S</b>
-      </a>
+      </button>
     </div>
     <div class="cover-title-block reveal">
       <div class="cover-kicker eyebrow">An invitation to celebrate</div>
@@ -440,18 +455,46 @@ button,a{font:inherit} a{text-decoration:none;color:inherit}
     const openBtn = document.getElementById('openBtn');
     const hero = document.getElementById('hero');
 
-    if(openBtn && cover){
-      openBtn.addEventListener('click', function(e){
-        // Keep the anchor fallback functional even when scripting is restricted.
-        if (cover.classList) cover.classList.add('open');
-        if(hero && hero.scrollIntoView){
-          e.preventDefault();
-          window.setTimeout(function(){
-            hero.scrollIntoView({behavior: prefersReduced ? 'auto' : 'smooth', block:'start'});
-          }, prefersReduced ? 0 : 700);
-        }
-      });
+    let gateOpened = false;
+    let lockedScrollY = 0;
+    function lockScroll(){
+      lockedScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      document.documentElement.classList.add('gate-lock');
+      document.body.classList.add('gate-closed');
+      document.body.style.top = (-lockedScrollY) + 'px';
     }
+    function unlockScroll(){
+      document.documentElement.classList.remove('gate-lock');
+      document.body.classList.remove('gate-closed');
+      document.body.style.top = '';
+      window.scrollTo(0, lockedScrollY);
+    }
+    function openInvitation(e){
+      // Never cancel the initiating touch/click. Cancelling pointer/touch start
+      // can suppress activation on some iOS/Android browsers.
+      if(gateOpened) return;
+      gateOpened = true;
+      if (cover && cover.classList) cover.classList.add('open');
+      unlockScroll();
+      document.body.classList.add('gate-open');
+      // Move to the first invitation page only after the opening animation has started.
+      if(hero && hero.scrollIntoView){
+        window.setTimeout(function(){
+          hero.scrollIntoView({behavior: prefersReduced ? 'auto' : 'smooth', block:'start'});
+        }, prefersReduced ? 50 : 900);
+      }
+    }
+    lockScroll();
+    window.openInvitation = openInvitation;
+    const envelopeHit = document.getElementById('envelopeHit');
+    function bindOpenTarget(el){
+      if(!el) return;
+      el.addEventListener('pointerup', openInvitation, {passive:true});
+      el.addEventListener('click', openInvitation);
+      el.addEventListener('touchend', openInvitation, {passive:true});
+    }
+    bindOpenTarget(openBtn);
+    bindOpenTarget(envelopeHit);
 
     // Wedding ceremony: 25 October 2026, 06:00 IST (00:30 UTC).
     const target = Date.UTC(2026, 9, 25, 0, 30, 0);
@@ -497,6 +540,27 @@ button,a{font:inherit} a{text-decoration:none;color:inherit}
     } else {
       document.querySelectorAll('.reveal').forEach(function(el){ el.classList.add('show'); });
     }
+
+    // Keep the cover as a true entry gate: no wheel/touch/key scrolling until the seal is opened.
+    function blockClosedScroll(e){
+      if(!document.body.classList.contains('gate-closed')) return;
+      if(e && e.target && e.target.closest && e.target.closest('#cover')) return;
+      e.preventDefault();
+    }
+    // iOS/Android fallback: catch the end of the tap before browser gesture handling.
+    document.addEventListener('touchend', function(e){
+      if(!document.body.classList.contains('gate-closed')) return;
+      const t = e.target && e.target.closest ? e.target.closest('#openBtn, #envelopeHit') : null;
+      if(t && !gateOpened) openInvitation(e);
+    }, {passive:true, capture:true});
+    function blockClosedKeys(e){
+      if(!document.body.classList.contains('gate-closed')) return;
+      const blocked = ['ArrowDown','ArrowUp','PageDown','PageUp','Home','End',' '];
+      if(blocked.indexOf(e.key) !== -1) e.preventDefault();
+    }
+    window.addEventListener('wheel', blockClosedScroll, {passive:false});
+    window.addEventListener('touchmove', blockClosedScroll, {passive:false});
+    window.addEventListener('keydown', blockClosedKeys, {passive:false});
 
     const progress = document.getElementById('progress');
     function updateProgress(){
